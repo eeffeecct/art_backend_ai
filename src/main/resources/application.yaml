@@ -1,0 +1,53 @@
+spring:
+  application:
+    name: art-backend-ai
+
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:5432/${POSTGRES_DB}
+    username: ${POSTGRES_USER}
+    password: ${POSTGRES_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_DEFAULT_USER}
+    password: ${RABBITMQ_DEFAULT_PASS}
+
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+# Custom S3 Properties
+s3:
+  endpoint: http://${MINIO_HOST:localhost}:9000
+  region: us-east-1
+  access-key: ${MINIO_ROOT_USER}
+  secret-key: ${MINIO_ROOT_PASSWORD}
+  bucket: uploads
+  public-url: http://${MINIO_HOST:localhost}:9000
+
+# RabbitMQ Exchange/Queue Names
+art:
+  exchange: art.exchange
+  analysis:
+    queue: art.analysis.queue
+    routing-key: art.analyze
+  results:
+    queue: art.results.queue
+    routing-key: art.result
+
+logging:
+  level:
+    ru.timter.artbackendai: DEBUG
+    org.springframework.security: DEBUG
