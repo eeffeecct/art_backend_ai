@@ -5,7 +5,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.GetUrlRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
@@ -19,7 +18,9 @@ import java.time.Duration;
 public class S3Service {
 
     private final S3Client s3Client;
-    private final S3Presigner s3Presigner;
+    // Two presigners: internal host for the worker, public host for the browser.
+    private final S3Presigner s3PresignerInternal;
+    private final S3Presigner s3PresignerPublic;
 
     @Value("${s3.bucket}")
     private String bucket;
@@ -39,22 +40,33 @@ public class S3Service {
         return key;
     }
 
-    public String generatePresignedUrl(String key) {
-        GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
-                .signatureDuration(Duration.ofMinutes(10))
-                .getObjectRequest(builder -> builder.bucket(bucket).key(key).build())
-                .build();
-
-        return s3Presigner.presignGetObject(presignRequest).url().toString();
+    /**
+     * URL for the Python worker (signed with the internal MinIO endpoint, e.g. http://minio:9000).
+     */
+    public String generateWorkerUrl(String key) {
+        return presign(s3PresignerInternal, bucket, key, Duration.ofMinutes(60));
     }
 
-    public String generatePresignedUrlForDataset(String key) {
-        GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
-                .signatureDuration(Duration.ofMinutes(60)) // 1 hour for UI viewing
-                .getObjectRequest(builder -> builder.bucket("dataset").key(key).build())
-                .build();
+    /**
+     * URL for the browser to display the uploaded image (public endpoint).
+     */
+    public String generatePresignedUrl(String key) {
+        return presign(s3PresignerPublic, bucket, key, Duration.ofMinutes(60));
+    }
 
-        return s3Presigner.presignGetObject(presignRequest).url().toString();
+    /**
+     * URL for the browser to display a matched dataset image (public endpoint).
+     */
+    public String generatePresignedUrlForDataset(String key) {
+        return presign(s3PresignerPublic, "dataset", key, Duration.ofMinutes(60));
+    }
+
+    private String presign(S3Presigner presigner, String bucketName, String key, Duration ttl) {
+        GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
+                .signatureDuration(ttl)
+                .getObjectRequest(builder -> builder.bucket(bucketName).key(key).build())
+                .build();
+        return presigner.presignGetObject(presignRequest).url().toString();
     }
 
     public String getPublicUrl(String key) {

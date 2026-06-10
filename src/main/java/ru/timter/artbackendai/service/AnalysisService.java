@@ -48,7 +48,8 @@ public class  AnalysisService {
         log.info("Uploading file to S3: {}", s3Key);
         String savedKey = s3Service.uploadFile(s3Key, file.getInputStream(), file.getSize(), file.getContentType());
         String publicUrl = s3Service.getPublicUrl(savedKey);
-        String presignedUrl = s3Service.generatePresignedUrl(savedKey);
+        // Worker downloads via the INTERNAL MinIO endpoint (reachable inside the Docker network).
+        String presignedUrl = s3Service.generateWorkerUrl(savedKey);
 
         AnalysisTask task = AnalysisTask.builder()
                 .id(taskId)
@@ -76,12 +77,24 @@ public class  AnalysisService {
                 .orElseThrow(() -> new RuntimeException("Task not found: " + taskId));
     }
 
+    /**
+     * Fetch a task only if it belongs to the given user; otherwise behave as "not found"
+     * (404) to avoid leaking the existence of other users' tasks.
+     */
+    private AnalysisTask getOwnedTask(UUID taskId, UUID userId) {
+        AnalysisTask task = getRawTask(taskId);
+        if (!task.getUserId().equals(userId)) {
+            throw new RuntimeException("Task not found: " + taskId);
+        }
+        return task;
+    }
+
     public List<AnalysisTask> getHistory(UUID userId) {
         return taskRepository.findAllByUserIdOrderByCreatedAtDesc(userId);
     }
 
-    public AnalysisTaskDto getTaskStatus(UUID taskId) {
-        AnalysisTask task = getRawTask(taskId);
+    public AnalysisTaskDto getTaskStatus(UUID taskId, UUID userId) {
+        AnalysisTask task = getOwnedTask(taskId, userId);
         
         // Extract key and generate fresh presigned URL for the uploaded image
         String rawUrl = task.getImageS3Url();
@@ -102,7 +115,7 @@ public class  AnalysisService {
                 .build();
                 
         if (task.getStatus() == TaskStatus.COMPLETED) {
-            dto.setMatches(getMoreMatches(taskId, 6, 0));
+            dto.setMatches(fetchMatches(task, 6, 0));
         }
         
         return dto;
@@ -136,16 +149,20 @@ public class  AnalysisService {
         };
     }
 
-    public List<ArtworkMatchDto> getMoreMatches(UUID taskId, int limit, int offset) {
-        AnalysisTask task = getRawTask(taskId);
+    public List<ArtworkMatchDto> getMoreMatches(UUID taskId, int limit, int offset, UUID userId) {
+        AnalysisTask task = getOwnedTask(taskId, userId);
+        return fetchMatches(task, limit, offset);
+    }
+
+    private List<ArtworkMatchDto> fetchMatches(AnalysisTask task, int limit, int offset) {
         String embeddingString = task.getEmbeddingAsPgVector();
-        
+
         if (embeddingString == null) {
             throw new RuntimeException("Task not yet completed or embedding not saved");
         }
 
         List<ArtworkMatchProjection> projections = artworkRepository.findSimilarPaginatedWithScore(embeddingString, limit, offset);
-        
+
         return projections.stream().map(p -> {
             // Extract the key from the stored URL. Usually it looks like "http://.../dataset/author/image.jpg"
             // or just "author/image.jpg" depending on how it was imported.

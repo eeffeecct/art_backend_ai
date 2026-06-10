@@ -1,0 +1,18 @@
+# Production profile. Activated with SPRING_PROFILES_ACTIVE=prod.
+# Overrides the noisy/dev-friendly defaults in application.yaml.
+spring:
+  jpa:
+    hibernate:
+      # Schema is owned by the init SQL / migrations — Hibernate must NOT touch it.
+      ddl-auto: none
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+
+logging:
+  level:
+    root: INFO
+    ru.timter.artbackendai: INFO
+    org.springframework.security: WARN
+    org.hibernate.SQL: WARN

@@ -16,4 +16,6 @@ public class AnalysisResultMessage {
     private List<String> palette;
     private List<String> tags;
     private List<StyleProbability> styleBreakdown;
+    private String status; // optional: "FAILED" when the worker could not process the task
+    private String error;  // optional: human-readable failure reason
 }

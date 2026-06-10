@@ -37,6 +37,27 @@ public class ResultConsumer {
             return;
         }
 
+        // The worker explicitly reported a failure — mark the task FAILED so the
+        // frontend stops polling instead of spinning forever.
+        if ("FAILED".equalsIgnoreCase(result.getStatus())) {
+            log.warn("Worker reported FAILED for task {}: {}", result.getTaskId(), result.getError());
+            task.setStatus(TaskStatus.FAILED);
+            taskRepository.save(task);
+            return;
+        }
+
+        // Validate the embedding contract (CLIP-large => 768 dims) before touching pgvector,
+        // so a malformed/partial result fails the task cleanly instead of throwing a cryptic
+        // SQL cast error.
+        if (result.getEmbedding() == null || result.getEmbedding().size() != 768) {
+            log.error("Task {} has invalid embedding (size={}); marking FAILED",
+                    result.getTaskId(),
+                    result.getEmbedding() == null ? "null" : result.getEmbedding().size());
+            task.setStatus(TaskStatus.FAILED);
+            taskRepository.save(task);
+            return;
+        }
+
         try {
             // 1. Convert embedding to string format for pgvector
             String embeddingString = "[" + result.getEmbedding().stream()

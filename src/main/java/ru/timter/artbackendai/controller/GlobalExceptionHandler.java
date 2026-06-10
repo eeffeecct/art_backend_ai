@@ -3,6 +3,8 @@ package ru.timter.artbackendai.controller;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.AuthenticationException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -13,11 +15,34 @@ import java.util.Map;
 @Slf4j
 public class GlobalExceptionHandler {
 
+    @ExceptionHandler(AuthenticationException.class)
+    public ResponseEntity<?> handleAuthentication(AuthenticationException e) {
+        log.warn("Authentication failed: {}", e.getMessage());
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(Map.of("error", "Invalid username or password"));
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<?> handleIllegalArgument(IllegalArgumentException e) {
+        String message = e.getMessage() == null ? "Bad request" : e.getMessage();
+        HttpStatus status = message.contains("already taken") ? HttpStatus.CONFLICT : HttpStatus.BAD_REQUEST;
+        return ResponseEntity.status(status).body(Map.of("error", message));
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<?> handleValidation(MethodArgumentNotValidException e) {
+        String message = e.getBindingResult().getFieldErrors().stream()
+                .findFirst()
+                .map(fe -> fe.getField() + ": " + fe.getDefaultMessage())
+                .orElse("Validation failed");
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", message));
+    }
+
     @ExceptionHandler(IOException.class)
     public ResponseEntity<?> handleIOException(IOException e) {
         log.error("IO Error: {}", e.getMessage(), e);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(Map.of("error", "Failed to process file", "details", e.getMessage()));
+                .body(Map.of("error", "Failed to process file"));
     }
 
     @ExceptionHandler(RuntimeException.class)

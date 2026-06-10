@@ -18,6 +18,9 @@ public class S3Config {
     @Value("${s3.endpoint}")
     private String endpoint;
 
+    @Value("${s3.public-endpoint}")
+    private String publicEndpoint;
+
     @Value("${s3.region}")
     private String region;
 
@@ -27,26 +30,44 @@ public class S3Config {
     @Value("${s3.secret-key}")
     private String secretKey;
 
+    private StaticCredentialsProvider credentials() {
+        return StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey));
+    }
+
     @Bean
     public S3Client s3Client() {
+        // Internal endpoint — used for server-side uploads (backend -> MinIO).
         return S3Client.builder()
                 .endpointOverride(URI.create(endpoint))
                 .region(Region.of(region))
-                .credentialsProvider(StaticCredentialsProvider.create(
-                        AwsBasicCredentials.create(accessKey, secretKey)
-                ))
+                .credentialsProvider(credentials())
                 .forcePathStyle(true) // Required for MinIO
                 .build();
     }
 
+    /**
+     * Presigner that signs URLs with the INTERNAL endpoint (e.g. http://minio:9000).
+     * Consumed by the Python worker, which lives on the same Docker network.
+     */
     @Bean
-    public S3Presigner s3Presigner() {
+    public S3Presigner s3PresignerInternal() {
+        return buildPresigner(endpoint);
+    }
+
+    /**
+     * Presigner that signs URLs with the PUBLIC endpoint (e.g. http://localhost:9000
+     * or http://your-server:9000). Consumed by the user's browser.
+     */
+    @Bean
+    public S3Presigner s3PresignerPublic() {
+        return buildPresigner(publicEndpoint);
+    }
+
+    private S3Presigner buildPresigner(String uri) {
         return S3Presigner.builder()
-                .endpointOverride(URI.create(endpoint))
+                .endpointOverride(URI.create(uri))
                 .region(Region.of(region))
-                .credentialsProvider(StaticCredentialsProvider.create(
-                        AwsBasicCredentials.create(accessKey, secretKey)
-                ))
+                .credentialsProvider(credentials())
                 .serviceConfiguration(S3Configuration.builder()
                         .pathStyleAccessEnabled(true)
                         .build())
